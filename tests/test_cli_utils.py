@@ -51,7 +51,7 @@ class CliUtilsTests(TestCase):
         {
             "EMAIL_TO": "recipient@example.com",
             "EMAIL_FROM": "sender@gmail.com",
-            "GMAIL_APP_PASSWORD": "abcdefghijklmnop",
+            "RESEND_API_KEY": "re_123",
         },
         clear=True,
     )

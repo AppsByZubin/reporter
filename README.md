@@ -28,32 +28,27 @@ Validate the DigitalOcean Spaces credentials without generating a report:
 python reporter.py --validate-credentials
 ```
 
-To email the generated report through Gmail SMTP, set these values in the
-environment:
+To email the generated report through the Resend HTTPS Email API, set these
+values in the environment:
 
 ```text
 EMAIL_TO            # comma, semicolon, newline, or JSON list of recipients
-EMAIL_FROM          # Gmail sender address
-GMAIL_APP_PASSWORD  # 16-character Gmail app password
+EMAIL_FROM          # sender address or display sender, for example Reports <reports@example.com>
+RESEND_API_KEY
 ```
 
-Gmail defaults to `smtp.gmail.com` on port `587` with TLS, so `SMTP_HOST` is not
-required for the usual Gmail setup. The generic SMTP settings are still
-supported if you need to override them:
+The email API uses HTTPS on port `443`, avoiding cloud provider SMTP egress
+blocks. The Resend API URL can be overridden if needed:
 
 ```text
-SMTP_HOST
-SMTP_PORT           # optional; defaults to 587 with TLS
-SMTP_USE_TLS        # optional; defaults to true
-SMTP_USE_SSL        # optional; use true for SMTP-over-SSL on port 465
-SMTP_TIMEOUT_SECONDS # optional; defaults to 30
+RESEND_API_URL              # optional; defaults to https://api.resend.com/emails
+RESEND_API_TIMEOUT_SECONDS  # optional; defaults to 30
 ```
 
 The email subject is generated automatically as `<execution_date> trade report`,
 for example `20260604 trade report`.
 
-Gmail requires an app password instead of the regular account password. The
-machine running the script must also be able to reach the SMTP host and port.
+The machine running the script must be able to reach `https://api.resend.com`.
 
 ## Run
 
@@ -134,7 +129,7 @@ utils/cli_utils.py      # Argument parsing and workflow orchestration
 utils/config_utils.py   # bot.list reader
 utils/date_utils.py     # Execution-date parsing
 utils/logger.py         # Console and file logging
-utils/mail_utils.py     # SMTP report email delivery
+utils/mail_utils.py     # HTTPS report email delivery
 utils/s3_utils.py       # DigitalOcean Spaces/S3 downloads
 utils/record_utils.py   # CSV/JSON parsing and report row extraction
 utils/log_utils.py      # Log observation extraction
