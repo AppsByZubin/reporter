@@ -81,6 +81,36 @@ Without `--sendmail`, the app only writes the report to the output folder:
 python reporter.py 20260604
 ```
 
+## Docker
+
+Build the reporter image locally:
+
+```bash
+IMAGE_REPO=docker.io/bizzkpm/reporter
+TAG=sha-$(git rev-parse --short HEAD)
+docker build -t ${IMAGE_REPO}:${TAG} .
+```
+
+Push the image manually:
+
+```bash
+docker login
+docker push ${IMAGE_REPO}:${TAG}
+```
+
+The GitHub Actions workflow in `.github/workflows/dockerhub.yml` builds and
+pushes `docker.io/bizzkpm/reporter:sha-<commit>` on pushes to `main`, then
+updates `AppsByZubin/infrastructure/helm/reporter/values.yaml` with that tag so
+Argo CD can sync the new image.
+
+Configure these GitHub repository secrets in the `reporter` repo:
+
+```text
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
+INFRASTRUCTURE_REPO_TOKEN
+```
+
 The app reads `files/input/bot.list`, verifies every bot has a `production/`
 folder in Spaces, downloads each bot's `production/` folder under
 `downloads/<YYYYMMDD>/<bot>/`, and writes:
