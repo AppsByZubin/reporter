@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import socket
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -113,6 +114,7 @@ def send_file_via_email(
         raise FileNotFoundError(f"Report file not found: {output_path}")
 
     smtp_host = first_config_value(config, ("SMTP_HOST",)) or DEFAULT_SMTP_HOST
+    force_ipv4 = config_bool(config, "SMTP_FORCE_IPV4", False)
     use_ssl = config_bool(config, "SMTP_USE_SSL", False)
     use_tls = config_bool(config, "SMTP_USE_TLS", False if use_ssl else True)
     if use_ssl and use_tls:
@@ -132,9 +134,11 @@ def send_file_via_email(
         mail_settings.sender,
     )
     context = ssl.create_default_context()
+    smtp_class: type[smtplib.SMTP] | type[smtplib.SMTP_SSL]
+    smtp_class = IPv4SMTPSSL if force_ipv4 and use_ssl else smtplib.SMTP_SSL
 
     if use_ssl:
-        with smtplib.SMTP_SSL(
+        with smtp_class(
             smtp_host,
             smtp_port,
             timeout=timeout,
@@ -144,7 +148,8 @@ def send_file_via_email(
             smtp.send_message(message)
         return
 
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=timeout) as smtp:
+    smtp_class = IPv4SMTP if force_ipv4 else smtplib.SMTP
+    with smtp_class(smtp_host, smtp_port, timeout=timeout) as smtp:
         smtp.ehlo()
         if use_tls:
             smtp.starttls(context=context)
@@ -176,6 +181,41 @@ def build_report_email(
         filename=output_path.name,
     )
     return message
+
+
+class IPv4SMTP(smtplib.SMTP):
+    def _get_socket(self, host: str, port: int, timeout: int | float):
+        return create_ipv4_connection(host, port, timeout, self.source_address)
+
+
+class IPv4SMTPSSL(smtplib.SMTP_SSL):
+    def _get_socket(self, host: str, port: int, timeout: int | float):
+        socket_ = create_ipv4_connection(host, port, timeout, self.source_address)
+        return self.context.wrap_socket(socket_, server_hostname=host)
+
+
+def create_ipv4_connection(
+    host: str,
+    port: int,
+    timeout: int | float,
+    source_address: tuple[str, int] | None = None,
+) -> socket.socket:
+    errors: list[OSError] = []
+    for address in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM):
+        family, socktype, proto, _canonname, sockaddr = address
+        sock = socket.socket(family, socktype, proto)
+        try:
+            sock.settimeout(timeout)
+            if source_address is not None:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            return sock
+        except OSError as exc:
+            errors.append(exc)
+            sock.close()
+    if errors:
+        raise errors[-1]
+    raise OSError(f"No IPv4 address found for {host}:{port}.")
 
 
 def config_bool(config: Mapping[str, str], name: str, default: bool) -> bool:

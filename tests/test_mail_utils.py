@@ -88,3 +88,32 @@ class MailUtilsTests(TestCase):
         smtp.starttls.assert_called_once()
         smtp.login.assert_called_once_with("sender@gmail.com", "abcdefghijklmnop")
         smtp.send_message.assert_called_once()
+
+    @patch("utils.mail_utils.IPv4SMTPSSL")
+    def test_send_file_via_email_can_force_ipv4_with_ssl(self, smtp_class) -> None:
+        with TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "report.xlsx"
+            report_path.write_bytes(b"report")
+
+            settings = build_mail_settings(
+                {
+                    "EMAIL_TO": "recipient@example.com",
+                    "EMAIL_FROM": "sender@gmail.com",
+                    "GMAIL_APP_PASSWORD": "abcdefghijklmnop",
+                },
+                "20260604",
+            )
+            send_file_via_email(
+                report_path,
+                settings,
+                {
+                    "SMTP_FORCE_IPV4": "true",
+                    "SMTP_USE_SSL": "true",
+                    "SMTP_PORT": "465",
+                },
+            )
+
+        smtp_class.assert_called_once()
+        smtp = smtp_class.return_value.__enter__.return_value
+        smtp.login.assert_called_once_with("sender@gmail.com", "abcdefghijklmnop")
+        smtp.send_message.assert_called_once()
