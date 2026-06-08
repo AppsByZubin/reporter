@@ -158,11 +158,15 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Wrote %s.", output_path)
 
     if mail_settings:
-        send_file_via_email(
-            output_path,
-            mail_settings,
-            credentials,
-        )
+        try:
+            send_file_via_email(
+                output_path,
+                mail_settings,
+                credentials,
+            )
+        except Exception as exc:
+            logger.error("Email delivery failed for %s: %s", output_path, exc)
+            return 1
         logger.info(
             "Emailed %s to %s.",
             output_path,
