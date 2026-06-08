@@ -116,7 +116,9 @@ class MailUtilsTests(TestCase):
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://api.resend.com/emails")
         self.assertEqual(request.get_method(), "POST")
+        self.assertEqual(request.headers["Accept"], "application/json")
         self.assertEqual(request.headers["Authorization"], "Bearer re_123")
+        self.assertEqual(request.headers["User-agent"], "reporter/1.0")
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(payload["attachments"][0]["content"], "cmVwb3J0")
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 30)

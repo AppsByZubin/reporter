@@ -43,6 +43,7 @@ blocks. The Resend API URL can be overridden if needed:
 ```text
 RESEND_API_URL              # optional; defaults to https://api.resend.com/emails
 RESEND_API_TIMEOUT_SECONDS  # optional; defaults to 30
+RESEND_USER_AGENT           # optional; defaults to reporter/1.0
 ```
 
 The email subject is generated automatically as `<execution_date> trade report`,

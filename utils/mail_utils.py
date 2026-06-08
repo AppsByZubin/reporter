@@ -11,6 +11,7 @@ from typing import Any, Mapping, Sequence
 
 
 DEFAULT_RESEND_API_URL = "https://api.resend.com/emails"
+DEFAULT_RESEND_USER_AGENT = "reporter/1.0"
 EMAIL_PATTERN = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 DISPLAY_SENDER_PATTERN = re.compile(
     r"^.+\s<[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+>$"
@@ -115,8 +116,11 @@ def send_file_via_email(
 
     payload = build_resend_payload(output_path, mail_settings)
     api_url = clean_optional(config.get("RESEND_API_URL")) or DEFAULT_RESEND_API_URL
+    user_agent = (
+        clean_optional(config.get("RESEND_USER_AGENT")) or DEFAULT_RESEND_USER_AGENT
+    )
     timeout = config_int(config, "RESEND_API_TIMEOUT_SECONDS", 30)
-    send_resend_email(api_url, mail_settings.api_key, payload, timeout)
+    send_resend_email(api_url, mail_settings.api_key, user_agent, payload, timeout)
 
 
 def build_resend_payload(
@@ -141,6 +145,7 @@ def build_resend_payload(
 def send_resend_email(
     api_url: str,
     api_key: str,
+    user_agent: str,
     payload: Mapping[str, Any],
     timeout: int,
 ) -> None:
@@ -148,8 +153,10 @@ def send_resend_email(
         api_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={
+            "Accept": "application/json",
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": user_agent,
         },
         method="POST",
     )
