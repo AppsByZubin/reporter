@@ -50,7 +50,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help=(
             "Email the generated report using EMAIL_TO, EMAIL_FROM, "
-            "and RESEND_API_KEY."
+            "and GMAIL_APP_PASSWORD."
         ),
     )
     parser.add_argument("--holder-prefix", default=DEFAULT_HOLDER_PREFIX)

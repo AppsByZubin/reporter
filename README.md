@@ -28,31 +28,33 @@ Validate the DigitalOcean Spaces credentials without generating a report:
 python reporter.py --validate-credentials
 ```
 
-To email the generated report through the Resend HTTPS Email API, set these
-values in the environment:
+To email the generated report through Gmail SMTP, set these values in the
+environment:
 
 ```text
 EMAIL_TO            # comma, semicolon, newline, or JSON list of recipients
-EMAIL_FROM          # sender address or display sender, for example Reports <reports@yourdomain.com>
-RESEND_API_KEY
+EMAIL_FROM          # Gmail sender address
+GMAIL_APP_PASSWORD  # 16-character Gmail app password
 ```
 
-`EMAIL_FROM` must use a sender domain verified in Resend. Public mailbox
-domains such as `gmail.com` are rejected by Resend.
-
-The email API uses HTTPS on port `443`, avoiding cloud provider SMTP egress
-blocks. The Resend API URL can be overridden if needed:
+Gmail defaults to `smtp.gmail.com` on port `587` with TLS, so `SMTP_HOST` is not
+required for the usual Gmail setup. The generic SMTP settings are still
+supported if you need to override them:
 
 ```text
-RESEND_API_URL              # optional; defaults to https://api.resend.com/emails
-RESEND_API_TIMEOUT_SECONDS  # optional; defaults to 30
-RESEND_USER_AGENT           # optional; defaults to reporter/1.0
+SMTP_HOST
+SMTP_PORT            # optional; defaults to 587 with TLS
+SMTP_USE_TLS         # optional; defaults to true
+SMTP_USE_SSL         # optional; use true for SMTP-over-SSL on port 465
+SMTP_FORCE_IPV4      # optional; set true to force IPv4 SMTP sockets
+SMTP_TIMEOUT_SECONDS # optional; defaults to 30
 ```
 
 The email subject is generated automatically as `<execution_date> trade report`,
 for example `20260604 trade report`.
 
-The machine running the script must be able to reach `https://api.resend.com`.
+Gmail requires an app password instead of the regular account password. The
+machine running the script must also be able to reach the SMTP host and port.
 
 ## Run
 

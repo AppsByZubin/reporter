@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -7,21 +6,9 @@ from unittest.mock import patch
 from utils.mail_utils import (
     build_email_subject,
     build_mail_settings,
-    build_resend_payload,
     parse_email_recipients,
     send_file_via_email,
 )
-
-
-class FakeResponse:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, traceback) -> None:
-        pass
-
-    def read(self) -> bytes:
-        return b'{"id":"email-id"}'
 
 
 class MailUtilsTests(TestCase):
@@ -50,15 +37,15 @@ class MailUtilsTests(TestCase):
         settings = build_mail_settings(
             {
                 "EMAIL_TO": "one@example.com,two@example.com",
-                "EMAIL_FROM": "Reports <reports@example.com>",
-                "RESEND_API_KEY": "re_123",
+                "EMAIL_FROM": "sender@gmail.com",
+                "GMAIL_APP_PASSWORD": "abcd efgh ijkl mnop",
             },
             "20260604",
         )
 
         self.assertEqual(settings.recipients, ["one@example.com", "two@example.com"])
-        self.assertEqual(settings.sender, "Reports <reports@example.com>")
-        self.assertEqual(settings.api_key, "re_123")
+        self.assertEqual(settings.sender, "sender@gmail.com")
+        self.assertEqual(settings.app_password, "abcdefghijklmnop")
         self.assertEqual(settings.subject, "20260604 trade report")
 
     def test_build_email_subject_uses_execution_date(self) -> None:
@@ -66,28 +53,29 @@ class MailUtilsTests(TestCase):
 
         self.assertEqual(subject, "20260604 trade report")
 
-    def test_build_mail_settings_requires_resend_api_key(self) -> None:
-        with self.assertRaisesRegex(ValueError, "RESEND_API_KEY"):
+    def test_build_mail_settings_requires_gmail_app_password(self) -> None:
+        with self.assertRaisesRegex(ValueError, "GMAIL_APP_PASSWORD"):
             build_mail_settings(
                 {
                     "EMAIL_TO": "recipient@example.com",
-                    "EMAIL_FROM": "sender@example.com",
+                    "EMAIL_FROM": "sender@gmail.com",
                 },
                 "20260604",
             )
 
-    def test_build_mail_settings_rejects_public_sender_domain(self) -> None:
-        with self.assertRaisesRegex(ValueError, "gmail.com.*verified sender domain"):
+    def test_build_mail_settings_rejects_short_gmail_app_password(self) -> None:
+        with self.assertRaisesRegex(ValueError, "16 characters"):
             build_mail_settings(
                 {
                     "EMAIL_TO": "recipient@example.com",
-                    "EMAIL_FROM": "Reports <sender@gmail.com>",
-                    "RESEND_API_KEY": "re_123",
+                    "EMAIL_FROM": "sender@gmail.com",
+                    "GMAIL_APP_PASSWORD": "short",
                 },
                 "20260604",
             )
 
-    def test_build_resend_payload_attaches_report(self) -> None:
+    @patch("utils.mail_utils.smtplib.SMTP")
+    def test_send_file_via_email_uses_gmail_defaults(self, smtp_class) -> None:
         with TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "report.xlsx"
             report_path.write_bytes(b"report")
@@ -95,21 +83,25 @@ class MailUtilsTests(TestCase):
             settings = build_mail_settings(
                 {
                     "EMAIL_TO": "recipient@example.com",
-                    "EMAIL_FROM": "sender@example.com",
-                    "RESEND_API_KEY": "re_123",
+                    "EMAIL_FROM": "sender@gmail.com",
+                    "GMAIL_APP_PASSWORD": "abcdefghijklmnop",
                 },
                 "20260604",
             )
-            payload = build_resend_payload(report_path, settings)
+            send_file_via_email(
+                report_path,
+                settings,
+                {},
+            )
 
-        self.assertEqual(payload["from"], "sender@example.com")
-        self.assertEqual(payload["to"], ["recipient@example.com"])
-        self.assertEqual(payload["subject"], "20260604 trade report")
-        self.assertEqual(payload["attachments"][0]["filename"], "report.xlsx")
-        self.assertEqual(payload["attachments"][0]["content"], "cmVwb3J0")
+        smtp_class.assert_called_once_with("smtp.gmail.com", 587, timeout=30)
+        smtp = smtp_class.return_value.__enter__.return_value
+        smtp.starttls.assert_called_once()
+        smtp.login.assert_called_once_with("sender@gmail.com", "abcdefghijklmnop")
+        smtp.send_message.assert_called_once()
 
-    @patch("utils.mail_utils.urllib.request.urlopen", return_value=FakeResponse())
-    def test_send_file_via_email_posts_to_resend(self, urlopen) -> None:
+    @patch("utils.mail_utils.IPv4SMTPSSL")
+    def test_send_file_via_email_can_force_ipv4_with_ssl(self, smtp_class) -> None:
         with TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "report.xlsx"
             report_path.write_bytes(b"report")
@@ -117,19 +109,22 @@ class MailUtilsTests(TestCase):
             settings = build_mail_settings(
                 {
                     "EMAIL_TO": "recipient@example.com",
-                    "EMAIL_FROM": "sender@example.com",
-                    "RESEND_API_KEY": "re_123",
+                    "EMAIL_FROM": "sender@gmail.com",
+                    "GMAIL_APP_PASSWORD": "abcdefghijklmnop",
                 },
                 "20260604",
             )
-            send_file_via_email(report_path, settings, {})
+            send_file_via_email(
+                report_path,
+                settings,
+                {
+                    "SMTP_FORCE_IPV4": "true",
+                    "SMTP_USE_SSL": "true",
+                    "SMTP_PORT": "465",
+                },
+            )
 
-        request = urlopen.call_args.args[0]
-        self.assertEqual(request.full_url, "https://api.resend.com/emails")
-        self.assertEqual(request.get_method(), "POST")
-        self.assertEqual(request.headers["Accept"], "application/json")
-        self.assertEqual(request.headers["Authorization"], "Bearer re_123")
-        self.assertEqual(request.headers["User-agent"], "reporter/1.0")
-        payload = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(payload["attachments"][0]["content"], "cmVwb3J0")
-        self.assertEqual(urlopen.call_args.kwargs["timeout"], 30)
+        smtp_class.assert_called_once()
+        smtp = smtp_class.return_value.__enter__.return_value
+        smtp.login.assert_called_once_with("sender@gmail.com", "abcdefghijklmnop")
+        smtp.send_message.assert_called_once()
