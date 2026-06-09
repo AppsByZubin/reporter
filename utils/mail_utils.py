@@ -14,7 +14,26 @@ DEFAULT_RESEND_API_URL = "https://api.resend.com/emails"
 DEFAULT_RESEND_USER_AGENT = "reporter/1.0"
 EMAIL_PATTERN = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 DISPLAY_SENDER_PATTERN = re.compile(
-    r"^.+\s<[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+>$"
+    r"^.+\s<(?P<email>[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+)>$"
+)
+PUBLIC_RESEND_SENDER_DOMAINS = frozenset(
+    {
+        "aol.com",
+        "gmail.com",
+        "googlemail.com",
+        "hotmail.com",
+        "icloud.com",
+        "live.com",
+        "mac.com",
+        "me.com",
+        "msn.com",
+        "outlook.com",
+        "proton.me",
+        "protonmail.com",
+        "rocketmail.com",
+        "yahoo.com",
+        "ymail.com",
+    }
 )
 
 
@@ -78,8 +97,16 @@ def build_mail_settings(
     elif not is_valid_sender(sender):
         errors.append(
             "EMAIL_FROM must be an email address or display sender like "
-            "'Reports <reports@example.com>'."
+            "'Reports <reports@yourdomain.com>'."
         )
+    else:
+        domain = sender_domain(sender)
+        if domain in PUBLIC_RESEND_SENDER_DOMAINS:
+            errors.append(
+                f"EMAIL_FROM uses {domain}, but Resend requires a verified sender "
+                "domain. Use an address from a domain verified in Resend, such as "
+                "'Reports <reports@yourdomain.com>'."
+            )
     if not api_key:
         errors.append("RESEND_API_KEY is required.")
 
@@ -104,6 +131,14 @@ def is_email(value: str) -> bool:
 
 def is_valid_sender(value: str) -> bool:
     return is_email(value) or bool(DISPLAY_SENDER_PATTERN.fullmatch(value))
+
+
+def sender_domain(value: str) -> str:
+    sender_email = value.strip()
+    display_match = DISPLAY_SENDER_PATTERN.fullmatch(sender_email)
+    if display_match:
+        sender_email = display_match.group("email")
+    return sender_email.rsplit("@", 1)[-1].lower()
 
 
 def send_file_via_email(

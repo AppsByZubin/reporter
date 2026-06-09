@@ -76,6 +76,17 @@ class MailUtilsTests(TestCase):
                 "20260604",
             )
 
+    def test_build_mail_settings_rejects_public_sender_domain(self) -> None:
+        with self.assertRaisesRegex(ValueError, "gmail.com.*verified sender domain"):
+            build_mail_settings(
+                {
+                    "EMAIL_TO": "recipient@example.com",
+                    "EMAIL_FROM": "Reports <sender@gmail.com>",
+                    "RESEND_API_KEY": "re_123",
+                },
+                "20260604",
+            )
+
     def test_build_resend_payload_attaches_report(self) -> None:
         with TemporaryDirectory() as temp_dir:
             report_path = Path(temp_dir) / "report.xlsx"

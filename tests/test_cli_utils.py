@@ -50,7 +50,7 @@ class CliUtilsTests(TestCase):
         "utils.cli_utils.os.environ",
         {
             "EMAIL_TO": "recipient@example.com",
-            "EMAIL_FROM": "sender@gmail.com",
+            "EMAIL_FROM": "sender@example.com",
             "RESEND_API_KEY": "re_123",
         },
         clear=True,

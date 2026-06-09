@@ -33,9 +33,12 @@ values in the environment:
 
 ```text
 EMAIL_TO            # comma, semicolon, newline, or JSON list of recipients
-EMAIL_FROM          # sender address or display sender, for example Reports <reports@example.com>
+EMAIL_FROM          # sender address or display sender, for example Reports <reports@yourdomain.com>
 RESEND_API_KEY
 ```
+
+`EMAIL_FROM` must use a sender domain verified in Resend. Public mailbox
+domains such as `gmail.com` are rejected by Resend.
 
 The email API uses HTTPS on port `443`, avoiding cloud provider SMTP egress
 blocks. The Resend API URL can be overridden if needed:
