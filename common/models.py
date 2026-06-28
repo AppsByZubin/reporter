@@ -31,9 +31,11 @@ class BotArtifacts:
     bot: str
     base_prefix: str
     local_dir: Path
+    artifact_kind: str = "production"
     log_file: Path | None = None
     order_events_file: Path | None = None
     order_log_file: Path | None = None
+    downloaded_artifact_files: int = 0
     downloaded_production_files: int = 0
     warnings: list[str] | None = None
 

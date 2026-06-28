@@ -4,7 +4,7 @@ import csv
 import json
 import re
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -358,6 +358,61 @@ def extract_record_date(record: dict[str, Any]) -> date | None:
         parsed = parse_date_value(value)
         if parsed is not None:
             return parsed
+    return None
+
+
+def extract_record_datetime(record: dict[str, Any]) -> datetime | None:
+    flat = flatten_record(record)
+    normalized = {normalize_key(key): value for key, value in flat.items()}
+    for alias in DATE_FIELD_ALIASES:
+        value = normalized.get(normalize_key(alias))
+        parsed = parse_datetime_value(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def parse_datetime_value(value: Any) -> datetime | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, time.min)
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    iso_text = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(iso_text)
+    except ValueError:
+        pass
+
+    match = re.search(
+        r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?)?",
+        text,
+    )
+    if match:
+        try:
+            return datetime.fromisoformat(match.group(0))
+        except ValueError:
+            pass
+
+    for fmt in (
+        "%Y%m%d",
+        "%d%m%y",
+        "%Y-%m-%d",
+        "%d-%m-%y",
+        "%d/%m/%y",
+        "%d/%m/%Y",
+    ):
+        try:
+            parsed_date = datetime.strptime(text, fmt).date()
+            return datetime.combine(parsed_date, time.min)
+        except ValueError:
+            pass
     return None
 
 

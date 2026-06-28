@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 from common.models import BotArtifacts, ReportDate
+
+ARTIFACT_KINDS = ("mock", "production")
+
+
+@dataclass(frozen=True)
+class ArtifactPrefix:
+    base_prefix: str
+    artifact_kind: str
 
 
 def build_s3_client(credentials: dict[str, str]):
@@ -82,6 +91,33 @@ def resolve_production_base_prefix(
     return None
 
 
+def resolve_artifact_prefix(
+    client: Any,
+    bucket: str,
+    holder_prefix: str,
+    bot: str,
+    report_date: ReportDate,
+) -> ArtifactPrefix | None:
+    prefixes = candidate_base_prefixes(holder_prefix, bot, report_date)
+    for artifact_kind in ARTIFACT_KINDS:
+        for prefix in prefixes:
+            if prefix_has_objects(client, bucket, f"{prefix}{artifact_kind}/"):
+                return ArtifactPrefix(prefix, artifact_kind)
+    return None
+
+
+def candidate_artifact_prefixes(
+    holder_prefix: str,
+    bot: str,
+    report_date: ReportDate,
+) -> list[str]:
+    return [
+        f"{prefix}{artifact_kind}/"
+        for prefix in candidate_base_prefixes(holder_prefix, bot, report_date)
+        for artifact_kind in ARTIFACT_KINDS
+    ]
+
+
 def download_prefix(client: Any, bucket: str, prefix: str, destination: Path) -> int:
     destination.mkdir(parents=True, exist_ok=True)
     count = 0
@@ -134,22 +170,36 @@ def download_bot_artifacts(
     report_date: ReportDate,
     download_root: Path,
     base_prefix: str | None = None,
+    artifact_kind: str = "production",
 ) -> BotArtifacts:
+    if artifact_kind not in ARTIFACT_KINDS:
+        raise ValueError(f"Unsupported artifact kind: {artifact_kind}")
     if base_prefix is None:
-        base_prefix = resolve_production_base_prefix(
+        resolved = resolve_artifact_prefix(
             client, bucket, holder_prefix, bot, report_date
-        ) or resolve_base_prefix(client, bucket, holder_prefix, bot, report_date)
+        )
+        if resolved is None:
+            base_prefix = resolve_base_prefix(client, bucket, holder_prefix, bot, report_date)
+        else:
+            base_prefix = resolved.base_prefix
+            artifact_kind = resolved.artifact_kind
     local_dir = download_root / report_date.output / bot
-    artifacts = BotArtifacts(bot=bot, base_prefix=base_prefix, local_dir=local_dir)
-
-    production_prefix = f"{base_prefix}production/"
-    artifacts.downloaded_production_files = download_prefix(
-        client, bucket, production_prefix, local_dir / "production"
+    artifacts = BotArtifacts(
+        bot=bot,
+        base_prefix=base_prefix,
+        local_dir=local_dir,
+        artifact_kind=artifact_kind,
     )
 
-    if artifacts.downloaded_production_files == 0:
+    artifact_prefix = f"{base_prefix}{artifact_kind}/"
+    artifacts.downloaded_artifact_files = download_prefix(
+        client, bucket, artifact_prefix, local_dir / artifact_kind
+    )
+    artifacts.downloaded_production_files = artifacts.downloaded_artifact_files
+
+    if artifacts.downloaded_artifact_files == 0:
         artifacts.add_warning(
-            f"No production files found at s3://{bucket}/{production_prefix}"
+            f"No {artifact_kind} files found at s3://{bucket}/{artifact_prefix}"
         )
 
     log_name = f"{report_date.log_prefix}_{bot}.log"
@@ -161,7 +211,7 @@ def download_bot_artifacts(
     if artifacts.log_file is None:
         artifacts.add_warning(f"Missing log file: s3://{bucket}/{base_prefix}{log_name}")
 
-    orders_dir = local_dir / "production" / "orders"
+    orders_dir = local_dir / artifact_kind / "orders"
     artifacts.order_events_file = first_existing_local(
         [orders_dir / "order_events.json"]
     )
@@ -171,14 +221,14 @@ def download_bot_artifacts(
             bucket,
             [
                 (
-                    f"{base_prefix}production/orders/order_events.json",
+                    f"{base_prefix}{artifact_kind}/orders/order_events.json",
                     orders_dir / "order_events.json",
                 )
             ],
         )
     if artifacts.order_events_file is None:
         artifacts.add_warning(
-            f"Missing order events file: s3://{bucket}/{base_prefix}production/orders/order_events.json"
+            f"Missing order events file: s3://{bucket}/{base_prefix}{artifact_kind}/orders/order_events.json"
         )
 
     order_log_candidates = [
@@ -192,19 +242,75 @@ def download_bot_artifacts(
             bucket,
             [
                 (
-                    f"{base_prefix}production/orders/order_log.json",
+                    f"{base_prefix}{artifact_kind}/orders/order_log.json",
                     orders_dir / "order_log.json",
                 ),
                 (
-                    f"{base_prefix}production/orders/order_log.csv",
+                    f"{base_prefix}{artifact_kind}/orders/order_log.csv",
                     orders_dir / "order_log.csv",
                 ),
             ],
         )
     if artifacts.order_log_file is None:
         artifacts.add_warning(
-            f"Missing order log file: s3://{bucket}/{base_prefix}production/orders/order_log.json "
+            f"Missing order log file: s3://{bucket}/{base_prefix}{artifact_kind}/orders/order_log.json "
             f"or order_log.csv"
+        )
+
+    return artifacts
+
+
+def build_local_bot_artifacts(
+    bot: str,
+    base_prefix: str,
+    report_date: ReportDate,
+    download_root: Path,
+    artifact_kind: str,
+) -> BotArtifacts:
+    if artifact_kind not in ARTIFACT_KINDS:
+        raise ValueError(f"Unsupported artifact kind: {artifact_kind}")
+
+    local_dir = download_root / report_date.output / bot
+    artifacts = BotArtifacts(
+        bot=bot,
+        base_prefix=base_prefix,
+        local_dir=local_dir,
+        artifact_kind=artifact_kind,
+    )
+
+    artifact_dir = local_dir / artifact_kind
+    if artifact_dir.exists():
+        artifacts.downloaded_artifact_files = sum(
+            1 for path in artifact_dir.rglob("*") if path.is_file()
+        )
+    artifacts.downloaded_production_files = artifacts.downloaded_artifact_files
+    if artifacts.downloaded_artifact_files == 0:
+        artifacts.add_warning(f"No local {artifact_kind} files found at {artifact_dir}")
+
+    log_name = f"{report_date.log_prefix}_{bot}.log"
+    artifacts.log_file = first_existing_local([local_dir / log_name])
+    if artifacts.log_file is None:
+        artifacts.add_warning(f"Missing local log file: {local_dir / log_name}")
+
+    orders_dir = artifact_dir / "orders"
+    artifacts.order_events_file = first_existing_local(
+        [orders_dir / "order_events.json"]
+    )
+    if artifacts.order_events_file is None:
+        artifacts.add_warning(
+            f"Missing local order events file: {orders_dir / 'order_events.json'}"
+        )
+
+    artifacts.order_log_file = first_existing_local(
+        [
+            orders_dir / "order_log.json",
+            orders_dir / "order_log.csv",
+        ]
+    )
+    if artifacts.order_log_file is None:
+        artifacts.add_warning(
+            f"Missing local order log file: {orders_dir / 'order_log.json'} "
+            f"or {orders_dir / 'order_log.csv'}"
         )
 
     return artifacts
