@@ -179,4 +179,14 @@ SECTION_BY_BOT = {
         "observation_end": 56,
         "table": "Table27",
     },
+    "titanbot": {
+        "title_row": 60,
+        "header_row": 62,
+        "data_start": 63,
+        "data_end": 70,
+        "total_row": 71,
+        "observation_start": 74,
+        "observation_end": 77,
+        "table": "Table274",
+    },
 }
