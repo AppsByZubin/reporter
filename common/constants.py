@@ -189,4 +189,14 @@ SECTION_BY_BOT = {
         "observation_end": 77,
         "table": "Table274",
     },
+    "fibobot": {
+        "title_row": 81,
+        "header_row": 83,
+        "data_start": 84,
+        "data_end": 90,
+        "total_row": 91,
+        "observation_start": 93,
+        "observation_end": 96,
+        "table": "Table2742",
+    },
 }
