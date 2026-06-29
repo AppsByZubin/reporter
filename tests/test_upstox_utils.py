@@ -27,12 +27,14 @@ class UpstoxUtilsTests(TestCase):
                 "UPSTOX_API_BASE_URL": "https://api-hft.upstox.com",
                 "UPSTOX_ORDER_DETAILS_PATH": "/v2/order/details",
                 "UPSTOX_API_TIMEOUT_SECONDS": "45",
+                "upstox_api_user_agent": "reporter-prod/1.0",
             }
         )
 
         self.assertEqual(settings.access_token, "token")
         self.assertEqual(settings.order_details_url, "https://api-hft.upstox.com/v2/order/details")
         self.assertEqual(settings.timeout, 45)
+        self.assertEqual(settings.user_agent, "reporter-prod/1.0")
 
     def test_build_upstox_settings_requires_token(self) -> None:
         with self.assertRaisesRegex(ValueError, "UPSTOX_API_ACCESS_TOKEN"):
@@ -63,3 +65,4 @@ class UpstoxUtilsTests(TestCase):
         )
         self.assertEqual(request.get_header("Authorization"), "Bearer token")
         self.assertEqual(request.get_header("Accept"), "application/json")
+        self.assertEqual(request.get_header("User-agent"), "reporter/1.0")

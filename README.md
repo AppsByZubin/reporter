@@ -49,6 +49,7 @@ UPSTOX_API_ACCESS_TOKEN    # also accepts upstox_api_access_token
 UPSTOX_API_BASE_URL        # optional; defaults to https://api.upstox.com
 UPSTOX_ORDER_DETAILS_PATH  # optional; defaults to /v2/order/details
 UPSTOX_API_TIMEOUT_SECONDS # optional; defaults to 30
+UPSTOX_API_USER_AGENT      # optional; defaults to reporter/1.0
 ```
 
 Each bot download is allowed 120 seconds before the reporter falls back to files
