@@ -12,6 +12,7 @@ from utils.mail_utils import clean_optional, config_int, first_config_value
 
 DEFAULT_UPSTOX_API_BASE_URL = "https://api.upstox.com"
 DEFAULT_UPSTOX_ORDER_DETAILS_PATH = "/v2/order/details"
+DEFAULT_UPSTOX_API_USER_AGENT = "reporter/1.0"
 
 
 class UpstoxApiError(RuntimeError):
@@ -24,6 +25,7 @@ class UpstoxSettings:
     api_base_url: str
     order_details_path: str
     timeout: int
+    user_agent: str
 
     @property
     def order_details_url(self) -> str:
@@ -46,6 +48,13 @@ def build_upstox_settings(config: Mapping[str, str]) -> UpstoxSettings:
         )
         or DEFAULT_UPSTOX_ORDER_DETAILS_PATH
     )
+    user_agent = (
+        first_config_value(
+            config,
+            ("UPSTOX_API_USER_AGENT", "upstox_api_user_agent"),
+        )
+        or DEFAULT_UPSTOX_API_USER_AGENT
+    )
 
     errors: list[str] = []
     if not access_token:
@@ -66,6 +75,7 @@ def build_upstox_settings(config: Mapping[str, str]) -> UpstoxSettings:
         api_base_url=api_base_url,
         order_details_path=order_details_path,
         timeout=timeout,
+        user_agent=user_agent,
     )
 
 
@@ -86,6 +96,7 @@ class UpstoxOrderClient:
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.settings.access_token}",
+                "User-Agent": self.settings.user_agent,
             },
             method="GET",
         )
