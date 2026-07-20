@@ -20,19 +20,24 @@ from utils.date_utils import parse_execution_date
 from utils.excel_utils import write_report
 from utils.logger import create_logger
 from utils.mail_utils import build_mail_settings, send_file_via_email
-from utils.report_utils import build_report_data
-from utils.slack_utils import build_slack_settings, send_file_via_slack
+from utils.report_utils import build_report_data, has_production_orders
+from utils.slack_utils import (
+    build_slack_settings,
+    send_file_via_slack,
+    send_message_via_slack,
+)
 from utils.s3_utils import (
     build_local_bot_artifacts,
     build_s3_client,
     candidate_artifact_prefixes,
     download_bot_artifacts,
-    resolve_artifact_prefix,
+    resolve_artifact_prefixes,
     validate_s3_credentials,
 )
 from utils.upstox_utils import UpstoxOrderClient, build_upstox_settings
 
 DEFAULT_BOT_TIMEOUT_SECONDS = 120
+REPORT_ARTIFACT_KINDS = ("production", "mock")
 T = TypeVar("T")
 
 
@@ -199,23 +204,26 @@ def main(argv: list[str] | None = None) -> int:
     bots = read_bot_list(args.bot_list)
     holder_prefix = args.holder_prefix.strip("/")
 
-    artifact_prefixes: dict[str, tuple[str, str]] = {}
+    artifact_prefixes: dict[str, dict[str, str]] = {
+        artifact_kind: {} for artifact_kind in REPORT_ARTIFACT_KINDS
+    }
     missing_artifacts: dict[str, list[str]] = {}
     for bot in bots:
-        resolved = resolve_artifact_prefix(
+        resolved_by_kind = resolve_artifact_prefixes(
             client,
             bucket,
             holder_prefix,
             bot,
             report_date,
         )
-        if resolved is None:
+        if not resolved_by_kind:
             missing_artifacts[bot] = [
                 f"s3://{bucket}/{prefix}"
                 for prefix in candidate_artifact_prefixes(holder_prefix, bot, report_date)
             ]
             continue
-        artifact_prefixes[bot] = (resolved.base_prefix, resolved.artifact_kind)
+        for artifact_kind, resolved in resolved_by_kind.items():
+            artifact_prefixes[artifact_kind][bot] = resolved.base_prefix
 
     if missing_artifacts:
         for bot, prefixes in missing_artifacts.items():
@@ -224,144 +232,190 @@ def main(argv: list[str] | None = None) -> int:
                 bot,
                 ", ".join(prefixes),
             )
-    if not artifact_prefixes:
-        logger.error("No report updated because no mock or production artifacts were found.")
-        return 1
+    order_detail_fetchers: dict[
+        str,
+        Callable[[str], dict[str, object]] | None,
+    ] = {artifact_kind: None for artifact_kind in REPORT_ARTIFACT_KINDS}
+    if artifact_prefixes["mock"]:
+        logger.info("Mock artifacts detected; Upstox lookup disabled for mock report.")
 
-    artifact_kinds = {
-        artifact_kind for _base_prefix, artifact_kind in artifact_prefixes.values()
-    }
-    if len(artifact_kinds) > 1:
-        logger.error(
-            "No report updated because mixed artifact modes were found: %s",
-            ", ".join(sorted(artifact_kinds)),
-        )
-        return 1
-    artifact_kind = next(iter(artifact_kinds))
-    order_detail_fetcher = None
-    if artifact_kind == "production":
-        try:
-            upstox_settings = build_upstox_settings(credentials)
-        except ValueError as exc:
-            logger.error("Upstox configuration validation failed: %s", exc)
-            return 1
-        order_detail_fetcher = UpstoxOrderClient(upstox_settings).get_order_details
-        logger.info("Upstox order-details lookup enabled for production report.")
-    else:
-        logger.info("Mock artifacts detected; Upstox lookup disabled.")
-
-    report_data: dict[str, tuple[list[dict[str, object]], str]] = {}
-    for bot in bots:
-        if bot not in artifact_prefixes:
-            continue
-        base_prefix, bot_artifact_kind = artifact_prefixes[bot]
-        logger.info("Downloading %s artifacts for %s.", bot, report_date.output)
-        try:
-            artifacts = run_with_timeout(
-                bot_timeout_seconds,
-                lambda: download_bot_artifacts(
-                    client,
-                    bucket,
-                    holder_prefix,
+    report_data_by_kind: dict[
+        str,
+        dict[str, tuple[list[dict[str, object]], str]],
+    ] = {artifact_kind: {} for artifact_kind in REPORT_ARTIFACT_KINDS}
+    for artifact_kind in REPORT_ARTIFACT_KINDS:
+        for bot in bots:
+            if bot not in artifact_prefixes[artifact_kind]:
+                continue
+            base_prefix = artifact_prefixes[artifact_kind][bot]
+            logger.info(
+                "Downloading %s %s artifacts for %s.",
+                bot,
+                artifact_kind,
+                report_date.output,
+            )
+            try:
+                artifacts = run_with_timeout(
+                    bot_timeout_seconds,
+                    lambda: download_bot_artifacts(
+                        client,
+                        bucket,
+                        holder_prefix,
+                        bot,
+                        report_date,
+                        args.download_dir,
+                        base_prefix,
+                        artifact_kind,
+                    ),
+                )
+            except BotProcessingTimeout:
+                artifacts = build_local_bot_artifacts(
                     bot,
+                    base_prefix,
                     report_date,
                     args.download_dir,
-                    base_prefix,
-                    bot_artifact_kind,
-                ),
-            )
-        except BotProcessingTimeout:
-            artifacts = build_local_bot_artifacts(
-                bot,
-                base_prefix,
-                report_date,
-                args.download_dir,
-                bot_artifact_kind,
-            )
-            if artifacts.downloaded_artifact_files == 0:
+                    artifact_kind,
+                )
+                if artifacts.downloaded_artifact_files == 0:
+                    logger.warning(
+                        "Skipping %s %s because download exceeded %d seconds and no "
+                        "local files were available.",
+                        bot,
+                        artifact_kind,
+                        bot_timeout_seconds,
+                    )
+                    continue
                 logger.warning(
-                    "Skipping %s because download exceeded %d seconds and no local "
-                    "%s files were available.",
+                    "%s %s download exceeded %d seconds; using %d local file(s) "
+                    "from %s.",
                     bot,
+                    artifact_kind,
                     bot_timeout_seconds,
-                    bot_artifact_kind,
+                    artifacts.downloaded_artifact_files,
+                    artifacts.local_dir,
+                )
+            if artifact_kind == "production" and not has_production_orders(
+                artifacts,
+                report_date.value,
+            ):
+                rows, observation = [], ""
+            else:
+                if (
+                    artifact_kind == "production"
+                    and order_detail_fetchers[artifact_kind] is None
+                ):
+                    try:
+                        upstox_settings = build_upstox_settings(credentials)
+                    except ValueError as exc:
+                        logger.error(
+                            "Upstox configuration validation failed: %s",
+                            exc,
+                        )
+                        return 1
+                    order_detail_fetchers[artifact_kind] = UpstoxOrderClient(
+                        upstox_settings
+                    ).get_order_details
+                    logger.info(
+                        "Upstox order-details lookup enabled for production report."
+                    )
+                artifacts, rows, observation = process_bot_report(
+                    artifacts,
+                    report_date,
+                    order_detail_fetchers[artifact_kind],
+                )
+            logger.info(
+                "%s %s: %d report rows, %d downloaded files.",
+                bot,
+                artifact_kind,
+                len(rows),
+                artifacts.downloaded_artifact_files,
+            )
+            for warning in artifacts.warnings or []:
+                logger.warning("%s %s: %s", bot, artifact_kind, warning)
+            if not rows:
+                logger.info(
+                    "Omitting %s from the %s report because no orders were found.",
+                    bot,
+                    artifact_kind,
                 )
                 continue
-            logger.warning(
-                "%s download exceeded %d seconds; using %d local %s file(s) from %s.",
-                bot,
-                bot_timeout_seconds,
-                artifacts.downloaded_artifact_files,
-                bot_artifact_kind,
-                artifacts.local_dir,
-            )
-        artifacts, rows, observation = process_bot_report(
-            artifacts,
-            report_date,
-            order_detail_fetcher,
-        )
-        report_data[bot] = (rows, observation)
-        logger.info(
-            "%s: %d report rows, %d %s files.",
-            bot,
-            len(rows),
-            artifacts.downloaded_artifact_files,
-            artifacts.artifact_kind,
-        )
-        for warning in artifacts.warnings or []:
-            logger.warning("%s: %s", bot, warning)
+            report_data_by_kind[artifact_kind][bot] = (rows, observation)
 
-    if not report_data:
-        logger.error("No report updated because every available bot was skipped.")
-        return 1
-
-    output_name = (
-        f"{report_date.output}_mock_report.xlsx"
-        if artifact_kind == "mock"
-        else f"{report_date.output}_report.xlsx"
-    )
-    output_path = args.output_dir / output_name
-    write_report(args.template, output_path, bots, report_data)
-    logger.info("Wrote %s.", output_path)
+    output_paths: dict[str, Path] = {}
+    for artifact_kind in REPORT_ARTIFACT_KINDS:
+        report_data = report_data_by_kind[artifact_kind]
+        if not report_data:
+            logger.info("No orders found for %s.", artifact_kind.capitalize())
+            continue
+        output_path = args.output_dir / (
+            f"{report_date.output}_{artifact_kind}_trade_report.xlsx"
+        )
+        report_bots = [bot for bot in bots if bot in report_data]
+        write_report(args.template, output_path, report_bots, report_data)
+        output_paths[artifact_kind] = output_path
+        logger.info("Wrote %s.", output_path)
 
     delivered = False
     if slack_settings:
-        try:
-            send_file_via_slack(
-                output_path,
-                slack_settings,
+        for artifact_kind in REPORT_ARTIFACT_KINDS:
+            output_path = output_paths.get(artifact_kind)
+            no_orders_message = (
+                f"No orders found for {artifact_kind.capitalize()}."
             )
-        except Exception as exc:
-            if slack_settings.upload_strict:
-                logger.error("Slack delivery failed for %s: %s", output_path, exc)
-                return 1
-            logger.warning("Slack delivery failed for %s: %s", output_path, exc)
-        else:
-            delivered = True
-            logger.info(
-                "Uploaded %s to Slack channel %s.",
-                output_path,
-                slack_settings.channel_id,
-            )
+            try:
+                if output_path is None:
+                    send_message_via_slack(no_orders_message, slack_settings)
+                else:
+                    send_file_via_slack(output_path, slack_settings)
+            except Exception as exc:
+                delivery_target = output_path or no_orders_message
+                if slack_settings.upload_strict:
+                    logger.error(
+                        "Slack delivery failed for %s: %s",
+                        delivery_target,
+                        exc,
+                    )
+                    return 1
+                logger.warning(
+                    "Slack delivery failed for %s: %s",
+                    delivery_target,
+                    exc,
+                )
+            else:
+                delivered = True
+                if output_path is None:
+                    logger.info(
+                        "Sent '%s' to Slack channel %s.",
+                        no_orders_message,
+                        slack_settings.channel_id,
+                    )
+                else:
+                    logger.info(
+                        "Uploaded %s to Slack channel %s.",
+                        output_path,
+                        slack_settings.channel_id,
+                    )
 
     if mail_settings:
-        try:
-            send_file_via_email(
+        for output_path in output_paths.values():
+            try:
+                send_file_via_email(
+                    output_path,
+                    mail_settings,
+                    credentials,
+                )
+            except Exception as exc:
+                logger.error("Email delivery failed for %s: %s", output_path, exc)
+                return 1
+            logger.info(
+                "Emailed %s to %s.",
                 output_path,
-                mail_settings,
-                credentials,
+                ", ".join(mail_settings.recipients),
             )
-        except Exception as exc:
-            logger.error("Email delivery failed for %s: %s", output_path, exc)
-            return 1
-        logger.info(
-            "Emailed %s to %s.",
-            output_path,
-            ", ".join(mail_settings.recipients),
-        )
-        delivered = True
+            delivered = True
 
     if not delivered:
-        logger.info("Report available at %s.", output_path)
+        for output_path in output_paths.values():
+            logger.info("Report available at %s.", output_path)
 
     return 0

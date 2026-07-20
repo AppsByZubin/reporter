@@ -135,6 +135,24 @@ def send_file_via_slack(
     )
 
 
+def send_message_via_slack(
+    message: str,
+    slack_settings: SlackSettings,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "channel": slack_settings.channel_id,
+        "text": message,
+    }
+    if slack_settings.thread_ts:
+        payload["thread_ts"] = slack_settings.thread_ts
+    return slack_api_request(
+        "chat.postMessage",
+        slack_settings.token,
+        payload,
+        slack_settings.timeout,
+    )
+
+
 def slack_api_request(
     method: str,
     token: str,

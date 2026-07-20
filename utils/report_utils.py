@@ -131,6 +131,18 @@ def build_report_data(
     return rows, observation
 
 
+def has_production_orders(
+    artifacts: BotArtifacts,
+    report_date: date | None = None,
+) -> bool:
+    """Check whether production has an order-log row that can enter the report."""
+    order_log_records = load_records(artifacts.order_log_file)
+    if report_date is not None:
+        order_log_records = filter_records_by_date(order_log_records, report_date)
+    order_log_records = sort_records_by_timestamp(order_log_records)
+    return bool(extract_trade_rows_from_order_log(order_log_records))
+
+
 def sort_records_by_timestamp(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         record

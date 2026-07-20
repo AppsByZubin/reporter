@@ -28,19 +28,25 @@ Validate the DigitalOcean Spaces credentials without generating a report:
 python reporter.py --validate-credentials
 ```
 
-For each bot/date prefix, the reporter looks for either a `mock/` folder or a
-`production/` folder. Mock data is written directly to:
+For each bot/date prefix, the reporter looks for both `mock/` and `production/`
+folders. A bot can therefore contribute to one or both reports. Mock data is
+written to:
 
 ```text
-output/<YYYYMMDD>_mock_report.xlsx
+output/<YYYYMMDD>_mock_trade_report.xlsx
 ```
 
-Production data reads order IDs from `production/orders/order_events.json`, calls
-Upstox order details for those IDs, and writes:
+Production data reads order IDs from `production/orders/order_log.json` or
+`order_log.csv`, calls Upstox order details for those IDs, and writes:
 
 ```text
-output/<YYYYMMDD>_report.xlsx
+output/<YYYYMMDD>_production_trade_report.xlsx
 ```
+
+A bot is included only when that mode contains at least one reportable order for
+the requested date. If an entire mode has no orders, no empty workbook is
+created. With `--slack`, the reporter posts `No orders found for Mock.` or
+`No orders found for Production.` instead.
 
 Production reports require an Upstox access token:
 
@@ -63,7 +69,7 @@ REPORTER_BOT_TIMEOUT_SECONDS # optional; defaults to 120
 To upload the generated report to Slack, set these values in the environment:
 
 ```text
-SLACK_BOT_TOKEN                 # bot token with files:write scope
+SLACK_BOT_TOKEN                 # bot token with files:write and chat:write scopes
 SLACK_CHANNEL_ID                # channel ID where the report should be shared
 SLACK_REPORT_INITIAL_COMMENT    # optional; defaults to "<execution_date> trade report"
 SLACK_REPORT_THREAD_TS          # optional; parent message ts for threaded uploads
@@ -174,22 +180,22 @@ DOCKERHUB_TOKEN
 INFRASTRUCTURE_REPO_TOKEN
 ```
 
-The app reads `files/input/bot.list`, resolves each bot's `mock/` or
-`production/` folder in Spaces, downloads artifacts under
-`downloads/<YYYYMMDD>/<bot>/`, and writes either:
+The app reads `files/input/bot.list`, resolves each bot's `mock/` and
+`production/` folders in Spaces, downloads artifacts under
+`downloads/<YYYYMMDD>/<bot>/`, and can write both:
 
 ```text
-output/<YYYYMMDD>_report.xlsx
-output/<YYYYMMDD>_mock_report.xlsx
+output/<YYYYMMDD>_production_trade_report.xlsx
+output/<YYYYMMDD>_mock_trade_report.xlsx
 ```
 
 The Spaces folder date is resolved by looking under `DDMMYY` first, matching
 paths like `index-bucket-holder/trades/firebot/040626/`, with `YYYYMMDD` as a
-fallback. If some requested bots have no matching data, they are skipped. If no
-configured bot has data, or if mock and production folders are mixed in the same
-run, the app exits without writing the report. Production reports extract order
-IDs from each bot's `production/orders/order_events.json` and use Upstox order
-details to fill the final workbook. If one bot download stalls for longer than
+fallback. If some requested bots have no matching data or no orders for a mode,
+they are omitted from that workbook. Mixed mock and production folders are
+processed independently in the same run. Production reports extract order IDs
+from each bot's production artifacts and use Upstox order details to fill the
+final workbook. If one bot download stalls for longer than
 `REPORTER_BOT_TIMEOUT_SECONDS`, local files are used when available; otherwise
 that bot is skipped and later bots still run.
 

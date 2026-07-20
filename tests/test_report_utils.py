@@ -5,10 +5,33 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from common.models import BotArtifacts
-from utils.report_utils import build_report_data
+from utils.report_utils import build_report_data, has_production_orders
 
 
 class ReportUtilsTests(TestCase):
+    def test_has_production_orders_requires_a_row_for_report_date(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            order_log = Path(temp_dir) / "order_log.csv"
+            order_log.write_text(
+                "id,symbol,timestamp\n"
+                "old-trade,NIFTY,2026-06-24T10:00:00+05:30\n",
+                encoding="utf-8",
+            )
+            artifacts = BotArtifacts(
+                bot="firebot",
+                base_prefix="base/",
+                local_dir=Path(temp_dir),
+                artifact_kind="production",
+                order_log_file=order_log,
+            )
+
+            self.assertFalse(
+                has_production_orders(artifacts, date(2026, 6, 25))
+            )
+            self.assertTrue(
+                has_production_orders(artifacts, date(2026, 6, 24))
+            )
+
     def test_build_report_data_enriches_order_log_rows_in_timestamp_order(self) -> None:
         with TemporaryDirectory() as temp_dir:
             order_log = Path(temp_dir) / "order_log.csv"

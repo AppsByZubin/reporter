@@ -9,6 +9,7 @@ from utils.slack_utils import (
     SlackApiError,
     build_slack_settings,
     send_file_via_slack,
+    send_message_via_slack,
 )
 
 
@@ -187,3 +188,34 @@ class SlackUtilsTests(TestCase):
 
             with self.assertRaisesRegex(SlackApiError, "length must be greater than 0"):
                 send_file_via_slack(report_path, settings)
+
+    @patch("utils.slack_utils.urlopen")
+    def test_send_message_via_slack_posts_text(self, urlopen) -> None:
+        urlopen.return_value = FakeResponse(
+            json.dumps({"ok": True, "ts": "1712345678.123456"}).encode("utf-8")
+        )
+        settings = build_slack_settings(
+            {
+                "SLACK_BOT_TOKEN": "xoxb-test-token",
+                "SLACK_CHANNEL_ID": "C123",
+                "SLACK_REPORT_THREAD_TS": "1711111111.111111",
+            },
+            "20260604",
+        )
+
+        result = send_message_via_slack(
+            "No orders found for Mock.",
+            settings,
+        )
+
+        self.assertTrue(result["ok"])
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://slack.com/api/chat.postMessage")
+        self.assertEqual(
+            parse_qs(request.data.decode("utf-8")),
+            {
+                "channel": ["C123"],
+                "text": ["No orders found for Mock."],
+                "thread_ts": ["1711111111.111111"],
+            },
+        )

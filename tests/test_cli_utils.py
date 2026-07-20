@@ -20,6 +20,16 @@ class FakeLogger:
         pass
 
 
+def artifact(bot: str, artifact_kind: str, files: int = 1) -> SimpleNamespace:
+    return SimpleNamespace(
+        bot=bot,
+        warnings=[],
+        artifact_kind=artifact_kind,
+        downloaded_artifact_files=files,
+        local_dir=f"downloads/20260604/{bot}",
+    )
+
+
 class CliUtilsTests(TestCase):
     def test_sendmail_flag_is_supported(self) -> None:
         args = parse_args(["20260604", "--sendmail"])
@@ -81,179 +91,219 @@ class CliUtilsTests(TestCase):
 
     @patch.dict(
         "utils.cli_utils.os.environ",
-        {
-            "EMAIL_TO": "recipient@example.com",
-            "EMAIL_FROM": "sender@gmail.com",
-            "GMAIL_APP_PASSWORD": "abcdefghijklmnop",
-            "UPSTOX_API_ACCESS_TOKEN": "upstox-token",
-        },
-        clear=True,
-    )
-    @patch("utils.cli_utils.send_file_via_email", side_effect=OSError("Network is unreachable"))
-    @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
-    @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=0,
-        ),
-    )
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_sendmail_failure_returns_error(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        _download_bot_artifacts,
-        _build_report_data,
-        _write_report,
-        _send_file_via_email,
-    ) -> None:
-        result = main(["20260604", "--sendmail"])
-
-        self.assertEqual(result, 1)
-
-    @patch.dict(
-        "utils.cli_utils.os.environ",
-        {
-            "SLACK_BOT_TOKEN": "xoxb-test-token",
-            "SLACK_CHANNEL_ID": "C123",
-            "UPSTOX_API_ACCESS_TOKEN": "upstox-token",
-        },
-        clear=True,
-    )
-    @patch("utils.cli_utils.send_file_via_slack", side_effect=OSError("Network is unreachable"))
-    @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
-    @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=0,
-        ),
-    )
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_slack_failure_returns_error_when_strict(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        _download_bot_artifacts,
-        _build_report_data,
-        _write_report,
-        _send_file_via_slack,
-    ) -> None:
-        result = main(["20260604", "--slack"])
-
-        self.assertEqual(result, 1)
-
-    @patch.dict(
-        "utils.cli_utils.os.environ",
-        {
-            "SLACK_BOT_TOKEN": "xoxb-test-token",
-            "SLACK_CHANNEL_ID": "C123",
-            "SLACK_REPORT_UPLOAD_STRICT": "false",
-            "UPSTOX_API_ACCESS_TOKEN": "upstox-token",
-        },
-        clear=True,
-    )
-    @patch("utils.cli_utils.send_file_via_slack", side_effect=OSError("Network is unreachable"))
-    @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
-    @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=0,
-        ),
-    )
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_slack_failure_can_be_non_strict(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        _download_bot_artifacts,
-        _build_report_data,
-        _write_report,
-        send_file_via_slack,
-    ) -> None:
-        result = main(["20260604", "--slack"])
-
-        self.assertEqual(result, 0)
-        send_file_via_slack.assert_called_once()
-
-    @patch.dict(
-        "utils.cli_utils.os.environ",
         {"UPSTOX_API_ACCESS_TOKEN": "upstox-token"},
         clear=True,
     )
     @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
+    @patch("utils.cli_utils.build_report_data")
+    @patch("utils.cli_utils.has_production_orders", return_value=True)
+    @patch("utils.cli_utils.download_bot_artifacts")
+    @patch("utils.cli_utils.resolve_artifact_prefixes")
     @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=0,
-        ),
+        "utils.cli_utils.read_bot_list",
+        return_value=["firebot", "trendobot", "haemabot", "titanbot", "fibobot"],
     )
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        side_effect=[
-            SimpleNamespace(base_prefix="firebot-prefix", artifact_kind="production"),
-            None,
-        ],
-    )
-    @patch(
-        "utils.cli_utils.candidate_artifact_prefixes",
-        return_value=["missing-prefix/"],
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot", "trendobot"])
     @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
     @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_missing_production_skips_bot_and_writes_report(
+    def test_mixed_modes_write_two_reports_and_omit_empty_bots(
         self,
         _logger,
         _build_s3_client,
         _read_bot_list,
-        _candidate_artifact_prefixes,
-        _resolve_artifact_prefix,
+        resolve_artifact_prefixes,
         download_bot_artifacts,
+        has_production_orders,
+        build_report_data,
+        write_report,
+    ) -> None:
+        resolve_artifact_prefixes.side_effect = [
+            {"production": SimpleNamespace(base_prefix="fire-prefix")},
+            {"mock": SimpleNamespace(base_prefix="trend-prefix")},
+            {"mock": SimpleNamespace(base_prefix="haema-prefix")},
+            {
+                "production": SimpleNamespace(base_prefix="titan-prefix"),
+                "mock": SimpleNamespace(base_prefix="titan-prefix"),
+            },
+            {"mock": SimpleNamespace(base_prefix="fibo-prefix")},
+        ]
+        download_bot_artifacts.side_effect = (
+            lambda _client, _bucket, _holder, bot, _date, _root, _prefix, kind:
+            artifact(bot, kind)
+        )
+
+        rows_by_bot_and_kind = {
+            ("firebot", "production"): [{"trade_id": "fire-production"}],
+            ("titanbot", "production"): [{"trade_id": "titan-production"}],
+            ("trendobot", "mock"): [],
+            ("haemabot", "mock"): [{"trade_id": "haema-mock"}],
+            ("titanbot", "mock"): [{"trade_id": "titan-mock"}],
+            ("fibobot", "mock"): [{"trade_id": "fibo-mock"}],
+        }
+        build_report_data.side_effect = lambda artifacts, _date, _fetcher: (
+            rows_by_bot_and_kind[(artifacts.bot, artifacts.artifact_kind)],
+            "observation",
+        )
+
+        result = main(["20260604"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(has_production_orders.call_count, 2)
+        self.assertEqual(write_report.call_count, 2)
+        reports = {call.args[1].name: call for call in write_report.call_args_list}
+        production = reports["20260604_production_trade_report.xlsx"]
+        mock = reports["20260604_mock_trade_report.xlsx"]
+        self.assertEqual(production.args[2], ["firebot", "titanbot"])
+        self.assertEqual(set(production.args[3]), {"firebot", "titanbot"})
+        self.assertEqual(mock.args[2], ["haemabot", "titanbot", "fibobot"])
+        self.assertEqual(set(mock.args[3]), {"haemabot", "titanbot", "fibobot"})
+
+        fetchers = {
+            (call.args[0].bot, call.args[0].artifact_kind): call.args[2]
+            for call in build_report_data.call_args_list
+        }
+        self.assertIsNotNone(fetchers[("firebot", "production")])
+        self.assertIsNotNone(fetchers[("titanbot", "production")])
+        self.assertIsNone(fetchers[("haemabot", "mock")])
+        self.assertIsNone(fetchers[("titanbot", "mock")])
+
+    @patch.dict(
+        "utils.cli_utils.os.environ",
+        {
+            "SLACK_BOT_TOKEN": "xoxb-test-token",
+            "SLACK_CHANNEL_ID": "C123",
+        },
+        clear=True,
+    )
+    @patch("utils.cli_utils.send_message_via_slack")
+    @patch("utils.cli_utils.send_file_via_slack")
+    @patch("utils.cli_utils.write_report")
+    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
+    @patch("utils.cli_utils.has_production_orders", return_value=False)
+    @patch("utils.cli_utils.download_bot_artifacts")
+    @patch(
+        "utils.cli_utils.resolve_artifact_prefixes",
+        return_value={
+            "production": SimpleNamespace(base_prefix="base-prefix"),
+            "mock": SimpleNamespace(base_prefix="base-prefix"),
+        },
+    )
+    @patch("utils.cli_utils.read_bot_list", return_value=["titanbot"])
+    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
+    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
+    def test_zero_orders_send_slack_messages_without_workbooks_or_upstox_token(
+        self,
+        _logger,
+        _build_s3_client,
+        _read_bot_list,
+        _resolve_artifact_prefixes,
+        download_bot_artifacts,
+        _has_production_orders,
         _build_report_data,
+        write_report,
+        send_file_via_slack,
+        send_message_via_slack,
+    ) -> None:
+        download_bot_artifacts.side_effect = (
+            lambda _client, _bucket, _holder, bot, _date, _root, _prefix, kind:
+            artifact(bot, kind)
+        )
+
+        result = main(["20260604", "--slack"])
+
+        self.assertEqual(result, 0)
+        write_report.assert_not_called()
+        send_file_via_slack.assert_not_called()
+        self.assertEqual(
+            [call.args[0] for call in send_message_via_slack.call_args_list],
+            ["No orders found for Production.", "No orders found for Mock."],
+        )
+
+    @patch.dict(
+        "utils.cli_utils.os.environ",
+        {
+            "SLACK_BOT_TOKEN": "xoxb-test-token",
+            "SLACK_CHANNEL_ID": "C123",
+            "UPSTOX_API_ACCESS_TOKEN": "upstox-token",
+        },
+        clear=True,
+    )
+    @patch("utils.cli_utils.send_message_via_slack")
+    @patch("utils.cli_utils.send_file_via_slack")
+    @patch("utils.cli_utils.write_report")
+    @patch(
+        "utils.cli_utils.build_report_data",
+        return_value=([{"trade_id": "fire"}], ""),
+    )
+    @patch("utils.cli_utils.has_production_orders", return_value=True)
+    @patch(
+        "utils.cli_utils.download_bot_artifacts",
+        return_value=artifact("firebot", "production"),
+    )
+    @patch(
+        "utils.cli_utils.resolve_artifact_prefixes",
+        return_value={"production": SimpleNamespace(base_prefix="base-prefix")},
+    )
+    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
+    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
+    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
+    def test_slack_uploads_available_mode_and_messages_empty_mode(
+        self,
+        _logger,
+        _build_s3_client,
+        _read_bot_list,
+        _resolve_artifact_prefixes,
+        _download_bot_artifacts,
+        _has_production_orders,
+        _build_report_data,
+        _write_report,
+        send_file_via_slack,
+        send_message_via_slack,
+    ) -> None:
+        result = main(["20260604", "--slack"])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            send_file_via_slack.call_args.args[0].name,
+            "20260604_production_trade_report.xlsx",
+        )
+        send_message_via_slack.assert_called_once()
+        self.assertEqual(
+            send_message_via_slack.call_args.args[0],
+            "No orders found for Mock.",
+        )
+
+    @patch.dict("utils.cli_utils.os.environ", {}, clear=True)
+    @patch("utils.cli_utils.write_report")
+    @patch("utils.cli_utils.build_report_data")
+    @patch("utils.cli_utils.has_production_orders", return_value=True)
+    @patch(
+        "utils.cli_utils.download_bot_artifacts",
+        return_value=artifact("firebot", "production"),
+    )
+    @patch(
+        "utils.cli_utils.resolve_artifact_prefixes",
+        return_value={"production": SimpleNamespace(base_prefix="base-prefix")},
+    )
+    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
+    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
+    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
+    def test_production_orders_require_upstox_token(
+        self,
+        _logger,
+        _build_s3_client,
+        _read_bot_list,
+        _resolve_artifact_prefixes,
+        download_bot_artifacts,
+        _has_production_orders,
+        build_report_data,
         write_report,
     ) -> None:
         result = main(["20260604"])
 
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
         download_bot_artifacts.assert_called_once()
-        self.assertEqual(download_bot_artifacts.call_args.args[3], "firebot")
-        self.assertEqual(write_report.call_args.args[2], ["firebot", "trendobot"])
+        build_report_data.assert_not_called()
+        write_report.assert_not_called()
 
     @patch.dict(
         "utils.cli_utils.os.environ",
@@ -261,37 +311,28 @@ class CliUtilsTests(TestCase):
         clear=True,
     )
     @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
+    @patch("utils.cli_utils.build_report_data", return_value=([{"trade_id": "fire"}], ""))
+    @patch("utils.cli_utils.has_production_orders", return_value=True)
     @patch(
         "utils.cli_utils.download_bot_artifacts",
         side_effect=[
-            SimpleNamespace(
-                warnings=[],
-                artifact_kind="production",
-                downloaded_artifact_files=1,
-            ),
-            SimpleNamespace(
-                warnings=[],
-                artifact_kind="production",
-                downloaded_artifact_files=1,
-            ),
+            artifact("firebot", "production"),
+            artifact("titanbot", "production"),
         ],
     )
     @patch("utils.cli_utils.run_with_timeout")
     @patch(
         "utils.cli_utils.build_local_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=0,
-            local_dir="downloads/20260604/trendobot",
-        ),
+        return_value=artifact("trendobot", "production", files=0),
     )
     @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
+        "utils.cli_utils.resolve_artifact_prefixes",
+        return_value={"production": SimpleNamespace(base_prefix="base-prefix")},
     )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot", "trendobot", "titanbot"])
+    @patch(
+        "utils.cli_utils.read_bot_list",
+        return_value=["firebot", "trendobot", "titanbot"],
+    )
     @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
     @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
     def test_timed_out_bot_is_skipped_and_next_bot_runs(
@@ -299,10 +340,11 @@ class CliUtilsTests(TestCase):
         _logger,
         _build_s3_client,
         _read_bot_list,
-        _resolve_artifact_prefix,
+        _resolve_artifact_prefixes,
         _build_local_bot_artifacts,
         run_with_timeout,
         download_bot_artifacts,
+        _has_production_orders,
         _build_report_data,
         write_report,
     ) -> None:
@@ -324,195 +366,4 @@ class CliUtilsTests(TestCase):
             [call.args[3] for call in download_bot_artifacts.call_args_list],
             ["firebot", "titanbot"],
         )
-        self.assertEqual(
-            set(write_report.call_args.args[3]),
-            {"firebot", "titanbot"},
-        )
-
-    @patch.dict(
-        "utils.cli_utils.os.environ",
-        {"UPSTOX_API_ACCESS_TOKEN": "upstox-token"},
-        clear=True,
-    )
-    @patch("utils.cli_utils.write_report")
-    @patch(
-        "utils.cli_utils.build_report_data",
-        side_effect=[
-            ([{"trade_id": "fire"}], "fire observation"),
-            ([{"trade_id": "trend"}], "trend observation"),
-        ],
-    )
-    @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=1,
-            local_dir="downloads/20260604/firebot",
-        ),
-    )
-    @patch(
-        "utils.cli_utils.build_local_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=2,
-            local_dir="downloads/20260604/trendobot",
-        ),
-    )
-    @patch("utils.cli_utils.run_with_timeout")
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot", "trendobot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_timed_out_download_uses_local_files_when_available(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        run_with_timeout,
-        build_local_bot_artifacts,
-        _download_bot_artifacts,
-        build_report_data,
-        write_report,
-    ) -> None:
-        call_count = 0
-
-        def maybe_timeout(_timeout_seconds, callback):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:
-                raise BotProcessingTimeout()
-            return callback()
-
-        run_with_timeout.side_effect = maybe_timeout
-
-        result = main(["20260604"])
-
-        self.assertEqual(result, 0)
-        build_local_bot_artifacts.assert_called_once()
-        self.assertEqual(build_report_data.call_count, 2)
-        self.assertEqual(
-            set(write_report.call_args.args[3]),
-            {"firebot", "trendobot"},
-        )
-
-    @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.resolve_artifact_prefix", return_value=None)
-    @patch(
-        "utils.cli_utils.candidate_artifact_prefixes",
-        return_value=["missing-prefix/"],
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["trendobot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_all_missing_production_returns_error(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _candidate_artifact_prefixes,
-        _resolve_artifact_prefix,
-        write_report,
-    ) -> None:
-        result = main(["20260604"])
-
-        self.assertEqual(result, 1)
-        write_report.assert_not_called()
-
-    @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
-    @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="mock",
-            downloaded_artifact_files=1,
-        ),
-    )
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="mock"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_mock_artifacts_write_mock_report_without_upstox(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        _download_bot_artifacts,
-        build_report_data,
-        write_report,
-    ) -> None:
-        result = main(["20260604"])
-
-        self.assertEqual(result, 0)
-        self.assertEqual(write_report.call_args.args[1].name, "20260604_mock_report.xlsx")
-        self.assertIsNone(build_report_data.call_args.args[2])
-
-    @patch.dict("utils.cli_utils.os.environ", {}, clear=True)
-    @patch("utils.cli_utils.download_bot_artifacts")
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_production_artifacts_require_upstox_token(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        download_bot_artifacts,
-    ) -> None:
-        result = main(["20260604"])
-
-        self.assertEqual(result, 1)
-        download_bot_artifacts.assert_not_called()
-
-    @patch.dict(
-        "utils.cli_utils.os.environ",
-        {"UPSTOX_API_ACCESS_TOKEN": "upstox-token"},
-        clear=True,
-    )
-    @patch("utils.cli_utils.write_report")
-    @patch("utils.cli_utils.build_report_data", return_value=([], ""))
-    @patch(
-        "utils.cli_utils.download_bot_artifacts",
-        return_value=SimpleNamespace(
-            warnings=[],
-            artifact_kind="production",
-            downloaded_artifact_files=1,
-        ),
-    )
-    @patch(
-        "utils.cli_utils.resolve_artifact_prefix",
-        return_value=SimpleNamespace(base_prefix="base-prefix", artifact_kind="production"),
-    )
-    @patch("utils.cli_utils.read_bot_list", return_value=["firebot"])
-    @patch("utils.cli_utils.build_s3_client", return_value=(object(), "bucket"))
-    @patch("utils.cli_utils.create_logger", return_value=FakeLogger())
-    def test_production_artifacts_use_upstox_fetcher(
-        self,
-        _logger,
-        _build_s3_client,
-        _read_bot_list,
-        _resolve_artifact_prefix,
-        _download_bot_artifacts,
-        build_report_data,
-        write_report,
-    ) -> None:
-        result = main(["20260604"])
-
-        self.assertEqual(result, 0)
-        self.assertEqual(write_report.call_args.args[1].name, "20260604_report.xlsx")
-        self.assertIsNotNone(build_report_data.call_args.args[2])
+        self.assertEqual(write_report.call_args.args[2], ["firebot", "titanbot"])

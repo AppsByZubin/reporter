@@ -45,18 +45,25 @@ def write_report(
     unmerge_template_ranges(ws)
     format_order_id_columns(ws)
 
+    active_bots = [
+        bot
+        for bot in template_ordered_bots(bots)
+        if report_data.get(bot, ([], ""))[0]
+    ]
+    active_sections = remove_unused_bot_sections(ws, active_bots)
+
     offset = 0
     end_of_day_total = Decimal("0")
     sections_to_merge: list[tuple[int, int, int, int]] = []
 
-    for bot in template_ordered_bots(bots):
+    for bot in active_bots:
         key = bot.lower()
-        if key not in SECTION_BY_BOT:
+        if key not in active_sections:
             print(f"Skipping {bot}: no section for this bot in the template.", file=sys.stderr)
             continue
 
         rows, _observation = report_data.get(bot, ([], ""))
-        section = prepare_section(ws, SECTION_BY_BOT[key], max(1, len(rows)), offset)
+        section = prepare_section(ws, active_sections[key], len(rows), offset)
         offset = int(section["offset"])
 
         title_row = int(section["title_row"])
@@ -120,6 +127,61 @@ def write_report(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
+
+
+def remove_unused_bot_sections(
+    ws: Any,
+    active_bots: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Delete template sections for bots that have no reportable orders."""
+    active_keys = {bot.lower() for bot in active_bots}
+    ordered_sections = sorted(
+        SECTION_BY_BOT.items(),
+        key=lambda item: int(item[1]["title_row"]),
+    )
+    section_ranges: dict[str, tuple[int, int]] = {}
+    for index, (bot, section) in enumerate(ordered_sections):
+        start_row = int(section["title_row"])
+        if index + 1 < len(ordered_sections):
+            end_row = int(ordered_sections[index + 1][1]["title_row"]) - 1
+        else:
+            end_row = int(section["observation_end"])
+        section_ranges[bot] = (start_row, end_row)
+
+    inactive_keys = set(SECTION_BY_BOT) - active_keys
+    adjusted_sections: dict[str, dict[str, Any]] = {}
+    row_keys = {
+        "title_row",
+        "header_row",
+        "data_start",
+        "data_end",
+        "total_row",
+        "observation_start",
+        "observation_end",
+    }
+    for bot, section in ordered_sections:
+        if bot not in active_keys:
+            continue
+        removed_before = sum(
+            end_row - start_row + 1
+            for inactive_bot, (start_row, end_row) in section_ranges.items()
+            if inactive_bot in inactive_keys and start_row < int(section["title_row"])
+        )
+        adjusted_sections[bot] = {
+            key: int(value) - removed_before if key in row_keys else value
+            for key, value in section.items()
+        }
+
+    for bot, section in reversed(ordered_sections):
+        if bot not in inactive_keys:
+            continue
+        table_name = str(section["table"])
+        if table_name in ws.tables:
+            del ws.tables[table_name]
+        start_row, end_row = section_ranges[bot]
+        ws.delete_rows(start_row, end_row - start_row + 1)
+
+    return adjusted_sections
 
 
 def unmerge_template_ranges(ws: Any) -> None:

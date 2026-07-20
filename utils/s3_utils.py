@@ -98,12 +98,35 @@ def resolve_artifact_prefix(
     bot: str,
     report_date: ReportDate,
 ) -> ArtifactPrefix | None:
+    artifact_prefixes = resolve_artifact_prefixes(
+        client,
+        bucket,
+        holder_prefix,
+        bot,
+        report_date,
+    )
+    for artifact_kind in ARTIFACT_KINDS:
+        if artifact_kind in artifact_prefixes:
+            return artifact_prefixes[artifact_kind]
+    return None
+
+
+def resolve_artifact_prefixes(
+    client: Any,
+    bucket: str,
+    holder_prefix: str,
+    bot: str,
+    report_date: ReportDate,
+) -> dict[str, ArtifactPrefix]:
+    """Return every available mock/production prefix for one bot and date."""
     prefixes = candidate_base_prefixes(holder_prefix, bot, report_date)
+    resolved: dict[str, ArtifactPrefix] = {}
     for artifact_kind in ARTIFACT_KINDS:
         for prefix in prefixes:
             if prefix_has_objects(client, bucket, f"{prefix}{artifact_kind}/"):
-                return ArtifactPrefix(prefix, artifact_kind)
-    return None
+                resolved[artifact_kind] = ArtifactPrefix(prefix, artifact_kind)
+                break
+    return resolved
 
 
 def candidate_artifact_prefixes(
@@ -212,20 +235,16 @@ def download_bot_artifacts(
         artifacts.add_warning(f"Missing log file: s3://{bucket}/{base_prefix}{log_name}")
 
     orders_dir = local_dir / artifact_kind / "orders"
-    artifacts.order_events_file = first_existing_local(
-        [orders_dir / "order_events.json"]
+    artifacts.order_events_file = download_first_existing(
+        client,
+        bucket,
+        [
+            (
+                f"{base_prefix}{artifact_kind}/orders/order_events.json",
+                orders_dir / "order_events.json",
+            )
+        ],
     )
-    if artifacts.order_events_file is None:
-        artifacts.order_events_file = download_first_existing(
-            client,
-            bucket,
-            [
-                (
-                    f"{base_prefix}{artifact_kind}/orders/order_events.json",
-                    orders_dir / "order_events.json",
-                )
-            ],
-        )
     if artifacts.order_events_file is None:
         artifacts.add_warning(
             f"Missing order events file: s3://{bucket}/{base_prefix}{artifact_kind}/orders/order_events.json"
@@ -235,22 +254,20 @@ def download_bot_artifacts(
         orders_dir / "order_log.json",
         orders_dir / "order_log.csv",
     ]
-    artifacts.order_log_file = first_existing_local(order_log_candidates)
-    if artifacts.order_log_file is None:
-        artifacts.order_log_file = download_first_existing(
-            client,
-            bucket,
-            [
-                (
-                    f"{base_prefix}{artifact_kind}/orders/order_log.json",
-                    orders_dir / "order_log.json",
-                ),
-                (
-                    f"{base_prefix}{artifact_kind}/orders/order_log.csv",
-                    orders_dir / "order_log.csv",
-                ),
-            ],
-        )
+    artifacts.order_log_file = download_first_existing(
+        client,
+        bucket,
+        [
+            (
+                f"{base_prefix}{artifact_kind}/orders/order_log.json",
+                order_log_candidates[0],
+            ),
+            (
+                f"{base_prefix}{artifact_kind}/orders/order_log.csv",
+                order_log_candidates[1],
+            ),
+        ],
+    )
     if artifacts.order_log_file is None:
         artifacts.add_warning(
             f"Missing order log file: s3://{bucket}/{base_prefix}{artifact_kind}/orders/order_log.json "

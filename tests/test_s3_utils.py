@@ -2,7 +2,7 @@ from datetime import date
 from unittest import TestCase
 
 from common.models import ReportDate
-from utils.s3_utils import resolve_artifact_prefix
+from utils.s3_utils import resolve_artifact_prefix, resolve_artifact_prefixes
 
 
 class FakeS3Client:
@@ -35,3 +35,29 @@ class S3UtilsTests(TestCase):
         self.assertIsNotNone(resolved)
         self.assertEqual(resolved.artifact_kind, "mock")
         self.assertEqual(resolved.base_prefix, "holder/trades/firebot/20260625/")
+
+    def test_resolve_artifact_prefixes_returns_mock_and_production(self) -> None:
+        client = FakeS3Client(
+            {
+                "holder/trades/titanbot/250626/production/",
+                "holder/trades/titanbot/20260625/mock/",
+            }
+        )
+
+        resolved = resolve_artifact_prefixes(
+            client,
+            "bucket",
+            "holder",
+            "titanbot",
+            ReportDate(date(2026, 6, 25)),
+        )
+
+        self.assertEqual(set(resolved), {"mock", "production"})
+        self.assertEqual(
+            resolved["production"].base_prefix,
+            "holder/trades/titanbot/250626/",
+        )
+        self.assertEqual(
+            resolved["mock"].base_prefix,
+            "holder/trades/titanbot/20260625/",
+        )
