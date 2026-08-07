@@ -199,4 +199,14 @@ SECTION_BY_BOT = {
         "observation_end": 96,
         "table": "Table2742",
     },
+    "meanbot": {
+        "title_row": 99,
+        "header_row": 101,
+        "data_start": 102,
+        "data_end": 108,
+        "total_row": 109,
+        "observation_start": 111,
+        "observation_end": 114,
+        "table": "Table27428",
+    },
 }
