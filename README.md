@@ -1,6 +1,6 @@
 # Reporter
 
-Creates the daily Excel report from DigitalOcean Spaces trade artifacts.
+Creates the daily Excel report from CloudPe S3 trade artifacts.
 
 ## Setup
 
@@ -9,20 +9,46 @@ conda activate reporter
 python -m pip install -r requirements.txt
 ```
 
-The app reads DigitalOcean Spaces settings from environment variables:
+The app reads CloudPe S3 settings from environment variables:
 
 ```text
-DO_S3_REGION
-DO_S3_ACCESS_KEY_ID
-DO_S3_SECRET_ACCESS_KEY
-DO_S3_BUCKET_NAME
-DO_S3_ENDPOINT_URL
+CLOUDPE_S3_REGION
+CLOUDPE_S3_ACCESS_KEY_ID
+CLOUDPE_S3_SECRET_ACCESS_KEY
+CLOUDPE_S3_BUCKET_NAME
+CLOUDPE_S3_ENDPOINT_URL
 ```
 
-Those are normally exported by `/home/amit/scripts/do_s3_bucket.sh` before the
-reporter runs.
+Set these before the reporter runs. Use CloudPe access keys; legacy `DO_S3_*`
+settings are no longer read. The client uses Signature V4 and path-style bucket
+addressing over the configured endpoint.
 
-Validate the DigitalOcean Spaces credentials without generating a report:
+The reporter Helm chart uses the same region and bucket as the bots:
+
+```bash
+export CLOUDPE_S3_REGION=in-west2
+export CLOUDPE_S3_ENDPOINT_URL=https://s3.in-west2.purestore.io
+export CLOUDPE_S3_BUCKET_NAME=index-bucket
+# Supply CLOUDPE_S3_ACCESS_KEY_ID and CLOUDPE_S3_SECRET_ACCESS_KEY securely.
+```
+
+[CloudPe's S3 guide](https://www.cloudpe.com/knowledge-base/accessing-cloudpe-s3-buckets-using-s3cmd/)
+shows `in-west3` as an example. Use the endpoint and region where your bucket
+actually lives; both are required configuration.
+
+In `infrastructure/helm/reporter`, `values.yaml` supplies the endpoint, region,
+and bucket. The existing Kubernetes Secret `reporter-s3-secrets` must contain
+`CLOUDPE_S3_ACCESS_KEY_ID` and `CLOUDPE_S3_SECRET_ACCESS_KEY` in the release
+namespace before the CronJob runs. The chart requires this Secret by default;
+when using another credential injection mechanism, set `s3Secret.enabled=false`
+and supply the same environment variables.
+
+This switches artifact storage access to CloudPe; it does not copy historical
+objects from DigitalOcean. Existing object keys must be present in CloudPe for
+historical reports. Generated workbooks remain local, with optional Slack and
+email delivery.
+
+Validate the CloudPe S3 credentials without generating a report:
 
 ```bash
 python reporter.py --validate-credentials
@@ -181,7 +207,7 @@ INFRASTRUCTURE_REPO_TOKEN
 ```
 
 The app reads `files/input/bot.list`, resolves each bot's `mock/` and
-`production/` folders in Spaces, downloads artifacts under
+`production/` folders in CloudPe S3, downloads artifacts under
 `downloads/<YYYYMMDD>/<bot>/`, and can write both:
 
 ```text
@@ -189,7 +215,7 @@ output/<YYYYMMDD>_production_trade_report.xlsx
 output/<YYYYMMDD>_mock_trade_report.xlsx
 ```
 
-The Spaces folder date is resolved by looking under `DDMMYY` first, matching
+The S3 folder date is resolved by looking under `DDMMYY` first, matching
 paths like `index-bucket-holder/trades/firebot/040626/`, with `YYYYMMDD` as a
 fallback. If some requested bots have no matching data or no orders for a mode,
 they are omitted from that workbook. Mixed mock and production folders are
@@ -211,7 +237,7 @@ utils/date_utils.py     # Execution-date parsing
 utils/logger.py         # Console and file logging
 utils/mail_utils.py     # SMTP report email delivery
 utils/slack_utils.py    # Slack report upload delivery
-utils/s3_utils.py       # DigitalOcean Spaces/S3 downloads
+utils/s3_utils.py       # CloudPe S3 downloads
 utils/upstox_utils.py   # Upstox order-details lookup
 utils/record_utils.py   # CSV/JSON parsing and report row extraction
 utils/log_utils.py      # Log observation extraction

@@ -18,30 +18,32 @@ class ArtifactPrefix:
 def build_s3_client(credentials: dict[str, str]):
     try:
         import boto3
+        from botocore.config import Config
     except ImportError as exc:
         raise RuntimeError(
             "Missing dependency boto3. Install with: python -m pip install -r requirements.txt"
         ) from exc
 
     required = [
-        "DO_S3_REGION",
-        "DO_S3_ACCESS_KEY_ID",
-        "DO_S3_SECRET_ACCESS_KEY",
-        "DO_S3_BUCKET_NAME",
-        "DO_S3_ENDPOINT_URL",
+        "CLOUDPE_S3_REGION",
+        "CLOUDPE_S3_ACCESS_KEY_ID",
+        "CLOUDPE_S3_SECRET_ACCESS_KEY",
+        "CLOUDPE_S3_BUCKET_NAME",
+        "CLOUDPE_S3_ENDPOINT_URL",
     ]
     missing = [name for name in required if not credentials.get(name)]
     if missing:
-        raise ValueError(f"Missing DigitalOcean Spaces settings: {', '.join(missing)}")
+        raise ValueError(f"Missing CloudPe S3 settings: {', '.join(missing)}")
 
     client = boto3.client(
         "s3",
-        region_name=credentials["DO_S3_REGION"],
-        endpoint_url=credentials["DO_S3_ENDPOINT_URL"],
-        aws_access_key_id=credentials["DO_S3_ACCESS_KEY_ID"],
-        aws_secret_access_key=credentials["DO_S3_SECRET_ACCESS_KEY"],
+        region_name=credentials["CLOUDPE_S3_REGION"],
+        endpoint_url=credentials["CLOUDPE_S3_ENDPOINT_URL"],
+        aws_access_key_id=credentials["CLOUDPE_S3_ACCESS_KEY_ID"],
+        aws_secret_access_key=credentials["CLOUDPE_S3_SECRET_ACCESS_KEY"],
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
-    return client, credentials["DO_S3_BUCKET_NAME"]
+    return client, credentials["CLOUDPE_S3_BUCKET_NAME"]
 
 
 def validate_s3_credentials(client: Any, bucket: str) -> None:

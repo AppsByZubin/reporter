@@ -47,7 +47,7 @@ class BotProcessingTimeout(TimeoutError):
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Download bot trade artifacts from DigitalOcean Spaces and fill the report template."
+        description="Download bot trade artifacts from CloudPe S3 and fill the report template."
     )
     parser.add_argument(
         "execution_date",
@@ -61,7 +61,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--validate-credentials",
         action="store_true",
-        help="Validate DigitalOcean Spaces credentials and exit.",
+        help="Validate CloudPe S3 credentials and exit.",
     )
     parser.add_argument(
         "--slack",
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
         client, bucket = build_s3_client(credentials)
     except Exception as exc:
         if args.validate_credentials:
-            logger.error("DigitalOcean Spaces credential validation failed: %s", exc)
+            logger.error("CloudPe S3 credential validation failed: %s", exc)
             return 1
         raise
 
@@ -193,12 +193,12 @@ def main(argv: list[str] | None = None) -> int:
             validate_s3_credentials(client, bucket)
         except Exception as exc:
             logger.error(
-                "DigitalOcean Spaces credential validation failed for bucket %s: %s",
+                "CloudPe S3 credential validation failed for bucket %s: %s",
                 bucket,
                 exc,
             )
             return 1
-        logger.info("DigitalOcean Spaces credentials validated for bucket %s.", bucket)
+        logger.info("CloudPe S3 credentials validated for bucket %s.", bucket)
         return 0
 
     bots = read_bot_list(args.bot_list)
