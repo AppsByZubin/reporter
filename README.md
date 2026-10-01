@@ -17,6 +17,7 @@ CLOUDPE_S3_ACCESS_KEY_ID
 CLOUDPE_S3_SECRET_ACCESS_KEY
 CLOUDPE_S3_BUCKET_NAME
 CLOUDPE_S3_ENDPOINT_URL
+CLOUDPE_S3_PREFIX          # optional; defaults to trades
 ```
 
 Set these before the reporter runs. Use CloudPe access keys; legacy `DO_S3_*`
@@ -215,9 +216,26 @@ output/<YYYYMMDD>_production_trade_report.xlsx
 output/<YYYYMMDD>_mock_trade_report.xlsx
 ```
 
-The S3 folder date is resolved by looking under `DDMMYY` first, matching
-paths like `index-bucket-holder/trades/firebot/040626/`, with `YYYYMMDD` as a
-fallback. If some requested bots have no matching data or no orders for a mode,
+The S3 folder date uses `YYYYMMDD`, matching paths like
+`trades/titanbot/20261001/mock/orders/order_log.csv`. The reporter prefers this
+format and falls back to older six-digit `DDMMYY` folders within the same prefix.
+It does not interpret `YYYYDDMM` folders: those can refer to a different date.
+Logs are read from `<mode>/logs/`, with the older bot/date log location as a fallback.
+
+Set `CLOUDPE_S3_PREFIX` to the same prefix used by the bots (`trades` by default),
+or override it with `--s3-prefix`. For staging reports and Slack delivery:
+
+```bash
+python reporter.py 20261001 --s3-prefix trades-staging --slack
+```
+
+This creates `output/20261001_mock_trade_report.xlsx` and/or
+`output/20261001_production_trade_report.xlsx` and uploads each generated workbook
+to the configured Slack channel. The scheduled reporter already uses `--slack`;
+set its `CLOUDPE_S3_PREFIX` environment variable when reading a custom prefix.
+For old holder-based archives, use `--holder-prefix index-bucket-holder` explicitly.
+
+If some requested bots have no matching data or no orders for a mode,
 they are omitted from that workbook. Mixed mock and production folders are
 processed independently in the same run. Production reports extract order IDs
 from each bot's production artifacts and use Upstox order details to fill the

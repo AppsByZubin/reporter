@@ -11,7 +11,7 @@ from common.models import BotArtifacts, ReportDate
 from common.constants import (
     DEFAULT_BOT_LIST,
     DEFAULT_DOWNLOAD_DIR,
-    DEFAULT_HOLDER_PREFIX,
+    DEFAULT_S3_PREFIX,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_TEMPLATE,
 )
@@ -81,7 +81,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             "EMAIL_FROM, and GMAIL_APP_PASSWORD."
         ),
     )
-    parser.add_argument("--holder-prefix", default=DEFAULT_HOLDER_PREFIX)
+    prefixes = parser.add_mutually_exclusive_group()
+    prefixes.add_argument(
+        "--s3-prefix",
+        default=os.getenv("CLOUDPE_S3_PREFIX", "").strip() or DEFAULT_S3_PREFIX,
+        help="Full S3 object prefix; defaults to CLOUDPE_S3_PREFIX or trades.",
+    )
+    prefixes.add_argument(
+        "--holder-prefix",
+        help="Legacy holder directory; reads <holder>/trades/ instead of --s3-prefix.",
+    )
     return parser.parse_args(argv)
 
 
@@ -202,7 +211,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     bots = read_bot_list(args.bot_list)
-    holder_prefix = args.holder_prefix.strip("/")
+    s3_prefix = args.s3_prefix.strip("/")
+    if args.holder_prefix is not None:
+        holder = args.holder_prefix.strip("/")
+        s3_prefix = f"{holder}/trades" if holder else DEFAULT_S3_PREFIX
 
     artifact_prefixes: dict[str, dict[str, str]] = {
         artifact_kind: {} for artifact_kind in REPORT_ARTIFACT_KINDS
@@ -212,14 +224,14 @@ def main(argv: list[str] | None = None) -> int:
         resolved_by_kind = resolve_artifact_prefixes(
             client,
             bucket,
-            holder_prefix,
+            s3_prefix,
             bot,
             report_date,
         )
         if not resolved_by_kind:
             missing_artifacts[bot] = [
                 f"s3://{bucket}/{prefix}"
-                for prefix in candidate_artifact_prefixes(holder_prefix, bot, report_date)
+                for prefix in candidate_artifact_prefixes(s3_prefix, bot, report_date)
             ]
             continue
         for artifact_kind, resolved in resolved_by_kind.items():
@@ -260,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
                     lambda: download_bot_artifacts(
                         client,
                         bucket,
-                        holder_prefix,
+                        s3_prefix,
                         bot,
                         report_date,
                         args.download_dir,

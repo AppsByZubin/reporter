@@ -6,7 +6,7 @@ DEFAULT_BOT_LIST = Path("files/input/bot.list")
 DEFAULT_TEMPLATE = Path("files/input/template.xlsx")
 DEFAULT_OUTPUT_DIR = Path("output")
 DEFAULT_DOWNLOAD_DIR = Path("downloads")
-DEFAULT_HOLDER_PREFIX = "index-bucket-holder"
+DEFAULT_S3_PREFIX = "trades"
 
 REPORT_COLUMNS = [
     "trade_id",

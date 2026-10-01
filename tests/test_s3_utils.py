@@ -28,7 +28,7 @@ class S3UtilsTests(TestCase):
         resolved = resolve_artifact_prefix(
             client,
             "bucket",
-            "holder",
+            "holder/trades",
             "firebot",
             ReportDate(date(2026, 6, 25)),
         )
@@ -48,7 +48,7 @@ class S3UtilsTests(TestCase):
         resolved = resolve_artifact_prefixes(
             client,
             "bucket",
-            "holder",
+            "holder/trades",
             "titanbot",
             ReportDate(date(2026, 6, 25)),
         )

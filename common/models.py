@@ -15,11 +15,11 @@ class ReportDate:
 
     @property
     def space_folder(self) -> str:
-        return self.value.strftime("%d%m%y")
+        return self.output
 
     @property
     def legacy_space_folder(self) -> str:
-        return self.output
+        return self.value.strftime("%d%m%y")
 
     @property
     def log_prefix(self) -> str:

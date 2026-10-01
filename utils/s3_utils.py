@@ -56,24 +56,25 @@ def prefix_has_objects(client: Any, bucket: str, prefix: str) -> bool:
 
 
 def candidate_base_prefixes(
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
 ) -> list[str]:
+    root = "/".join(part for part in (s3_prefix.strip("/"), bot) if part)
     return [
-        f"{holder_prefix}/trades/{bot}/{report_date.space_folder}/",
-        f"{holder_prefix}/trades/{bot}/{report_date.legacy_space_folder}/",
+        f"{root}/{report_date.space_folder}/",
+        f"{root}/{report_date.legacy_space_folder}/",
     ]
 
 
 def resolve_base_prefix(
     client: Any,
     bucket: str,
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
 ) -> str:
-    candidates = candidate_base_prefixes(holder_prefix, bot, report_date)
+    candidates = candidate_base_prefixes(s3_prefix, bot, report_date)
     for prefix in candidates:
         if prefix_has_objects(client, bucket, prefix):
             return prefix
@@ -83,11 +84,11 @@ def resolve_base_prefix(
 def resolve_production_base_prefix(
     client: Any,
     bucket: str,
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
 ) -> str | None:
-    for prefix in candidate_base_prefixes(holder_prefix, bot, report_date):
+    for prefix in candidate_base_prefixes(s3_prefix, bot, report_date):
         if prefix_has_objects(client, bucket, f"{prefix}production/"):
             return prefix
     return None
@@ -96,14 +97,14 @@ def resolve_production_base_prefix(
 def resolve_artifact_prefix(
     client: Any,
     bucket: str,
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
 ) -> ArtifactPrefix | None:
     artifact_prefixes = resolve_artifact_prefixes(
         client,
         bucket,
-        holder_prefix,
+        s3_prefix,
         bot,
         report_date,
     )
@@ -116,12 +117,12 @@ def resolve_artifact_prefix(
 def resolve_artifact_prefixes(
     client: Any,
     bucket: str,
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
 ) -> dict[str, ArtifactPrefix]:
     """Return every available mock/production prefix for one bot and date."""
-    prefixes = candidate_base_prefixes(holder_prefix, bot, report_date)
+    prefixes = candidate_base_prefixes(s3_prefix, bot, report_date)
     resolved: dict[str, ArtifactPrefix] = {}
     for artifact_kind in ARTIFACT_KINDS:
         for prefix in prefixes:
@@ -132,13 +133,13 @@ def resolve_artifact_prefixes(
 
 
 def candidate_artifact_prefixes(
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
 ) -> list[str]:
     return [
         f"{prefix}{artifact_kind}/"
-        for prefix in candidate_base_prefixes(holder_prefix, bot, report_date)
+        for prefix in candidate_base_prefixes(s3_prefix, bot, report_date)
         for artifact_kind in ARTIFACT_KINDS
     ]
 
@@ -190,7 +191,7 @@ def is_missing_s3_object(exc: Exception) -> bool:
 def download_bot_artifacts(
     client: Any,
     bucket: str,
-    holder_prefix: str,
+    s3_prefix: str,
     bot: str,
     report_date: ReportDate,
     download_root: Path,
@@ -201,10 +202,10 @@ def download_bot_artifacts(
         raise ValueError(f"Unsupported artifact kind: {artifact_kind}")
     if base_prefix is None:
         resolved = resolve_artifact_prefix(
-            client, bucket, holder_prefix, bot, report_date
+            client, bucket, s3_prefix, bot, report_date
         )
         if resolved is None:
-            base_prefix = resolve_base_prefix(client, bucket, holder_prefix, bot, report_date)
+            base_prefix = resolve_base_prefix(client, bucket, s3_prefix, bot, report_date)
         else:
             base_prefix = resolved.base_prefix
             artifact_kind = resolved.artifact_kind
@@ -231,7 +232,10 @@ def download_bot_artifacts(
     artifacts.log_file = download_first_existing(
         client,
         bucket,
-        [(f"{base_prefix}{log_name}", local_dir / log_name)],
+        [
+            (f"{artifact_prefix}logs/{log_name}", local_dir / artifact_kind / "logs" / log_name),
+            (f"{base_prefix}{log_name}", local_dir / log_name),
+        ],
     )
     if artifacts.log_file is None:
         artifacts.add_warning(f"Missing log file: s3://{bucket}/{base_prefix}{log_name}")
@@ -307,7 +311,10 @@ def build_local_bot_artifacts(
         artifacts.add_warning(f"No local {artifact_kind} files found at {artifact_dir}")
 
     log_name = f"{report_date.log_prefix}_{bot}.log"
-    artifacts.log_file = first_existing_local([local_dir / log_name])
+    artifacts.log_file = first_existing_local([
+        artifact_dir / "logs" / log_name,
+        local_dir / log_name,
+    ])
     if artifacts.log_file is None:
         artifacts.add_warning(f"Missing local log file: {local_dir / log_name}")
 
